@@ -185,7 +185,7 @@ function GoldfishEasterEgg() {
           transition={{ delay: 0.5 }}
         >
           <p className="font-handwritten text-secondary/40 text-xs mt-1">
-            The Birthday Department™ — Est. November 14
+            Made With Btech MOTA BHAI🐘💟
           </p>
         </motion.div>
       </div>
