@@ -1,0 +1,220 @@
+@import './animations.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Base ─── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+  overflow-x: hidden;
+}
+
+body {
+  background-color: #F7F6EF;
+  color: #34382F;
+  font-family: 'Nunito', sans-serif;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Safe area support for notched phones */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* ─── Scrollbar ─── */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: #F7F6EF;
+}
+::-webkit-scrollbar-thumb {
+  background: #A8B99A;
+  border-radius: 2px;
+}
+
+/* ─── Selection ─── */
+::selection {
+  background: #F5DF8B;
+  color: #34382F;
+}
+
+/* ─── Typography ─── */
+.font-display   { font-family: 'Fredoka One', cursive; }
+.font-handwritten { font-family: 'Caveat', cursive; }
+.font-body      { font-family: 'Nunito', sans-serif; }
+
+/* ─── Global section spacing ─── */
+.section-pad {
+  padding: 60px 20px;
+  max-width: 480px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* ─── Polaroid card ─── */
+.polaroid {
+  background: white;
+  padding: 12px 12px 32px;
+  box-shadow: 2px 4px 16px rgba(52, 56, 47, 0.12);
+  position: relative;
+}
+
+.polaroid::after {
+  content: attr(data-caption);
+  position: absolute;
+  bottom: 8px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-family: 'Caveat', cursive;
+  font-size: 14px;
+  color: #747568;
+  padding: 0 8px;
+}
+
+/* ─── Tape strips ─── */
+.tape {
+  position: absolute;
+  width: 48px;
+  height: 20px;
+  background: rgba(245, 223, 139, 0.65);
+  border-radius: 2px;
+  top: -10px;
+  left: 50%;
+  transform: translateX(-50%) rotate(-2deg);
+  z-index: 2;
+}
+
+.tape-left {
+  left: 15%;
+  transform: rotate(-8deg);
+}
+
+.tape-right {
+  left: auto;
+  right: 15%;
+  transform: rotate(5deg);
+}
+
+/* ─── Sticker badge ─── */
+.sticker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #F5DF8B;
+  border: 2px solid #34382F;
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-family: 'Caveat', cursive;
+  font-size: 14px;
+  font-weight: 600;
+  color: #34382F;
+  transform: rotate(-2deg);
+}
+
+/* ─── Buttons ─── */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: #34382F;
+  color: #F7F6EF;
+  border: none;
+  border-radius: 999px;
+  padding: 14px 28px;
+  font-family: 'Fredoka One', cursive;
+  font-size: 18px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-primary:hover, .btn-primary:active {
+  transform: scale(1.05);
+  box-shadow: 4px 4px 0px #A8B99A;
+}
+
+.btn-primary:active {
+  transform: scale(0.97);
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: #F5DF8B;
+  color: #34382F;
+  border: 2.5px solid #34382F;
+  border-radius: 999px;
+  padding: 12px 24px;
+  font-family: 'Fredoka One', cursive;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+.btn-secondary:hover {
+  transform: scale(1.04);
+  box-shadow: 3px 3px 0px #34382F;
+}
+
+/* ─── Section heading doodle line ─── */
+.heading-underline {
+  display: inline-block;
+  position: relative;
+}
+.heading-underline::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: #F5DF8B;
+  border-radius: 2px;
+  transform: rotate(-0.5deg);
+}
+
+/* ─── Noise texture overlay ─── */
+.noise {
+  position: relative;
+}
+.noise::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ─── Hidden scrollbar for internal carousels ─── */
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* ─── Reduced motion ─── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

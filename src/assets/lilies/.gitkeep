@@ -1,0 +1,3 @@
+# Lily SVG assets directory
+# SVG illustrations for lily garden are generated inline in LilyGarden.jsx
+# You can optionally add external SVG files here for use in components
