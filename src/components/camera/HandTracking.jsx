@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useHandTracking, HandTrackingState } from '../../hooks/useHandTracking';
 import { birthdayContent } from '../../data/birthdayContent';
 import { clamp } from '../../utils/animationHelpers';
+import { getHandGuidanceText } from '../../utils/handTracking';
 
 const { camera } = birthdayContent;
 const CAT_SRC = '/images/stickers/birthday-cat.jpg';
@@ -39,7 +40,7 @@ function SparkleLayer({ visible, x, y }) {
 function HandTracking({ onStop, onFallback }) {
   const { state, handData, errorMessage, initialize, stop } = useHandTracking();
   const videoRef = useRef(null);
-  const containerRef = useRef(null);
+  const previewRef = useRef(null);
   const [catError, setCatError] = useState(false);
 
   // Surface camera/model failures to the parent so it can show manual mode.
@@ -67,32 +68,50 @@ function HandTracking({ onStop, onFallback }) {
     onStop?.();
   };
 
-  // Map normalized landmark coords to mirrored display
-  const mapToDisplay = (landmark) => {
-    // Video is mirrored with scaleX(-1), so we invert X
-    return {
-      x: 1 - landmark.x,
-      y: landmark.y,
-    };
-  };
-
-  const isTracking = state === HandTrackingState.TRACKING;
   const isLoading = state === HandTrackingState.LOADING || state === HandTrackingState.READY;
 
-  // Cat position & size from hand data
-  const catPos = handData
-    ? mapToDisplay(handData.palmCenter)
-    : { x: 0.5, y: 0.3 };
+  const guidanceText = getHandGuidanceText(
+    state === HandTrackingState.TRACKING,
+    handData,
+    camera
+  );
 
-  // Scale cat based on palm size (palmSize is normalized 0-1)
-  const catSize = handData
-    ? clamp(handData.palmSize * 600, 80, 200)
-    : 100;
+  let catPosition = null;
+  let catSize = 100;
+  if (handData?.isOpen && previewRef.current && videoRef.current?.videoWidth) {
+    const preview = previewRef.current;
+    const video = videoRef.current;
+    const width = preview.clientWidth;
+    const height = preview.clientHeight;
+    const scale = Math.max(width / video.videoWidth, height / video.videoHeight);
+    const renderedWidth = video.videoWidth * scale;
+    const renderedHeight = video.videoHeight * scale;
+    const offsetX = (width - renderedWidth) / 2;
+    const offsetY = (height - renderedHeight) / 2;
+    const palmX = (1 - handData.palmCenter.x) * renderedWidth + offsetX;
+    const palmY = handData.palmCenter.y * renderedHeight + offsetY;
+    const maxCatSize = Math.min(160, width * 0.45, height * 0.45);
+    catSize = clamp(
+      handData.palmSize * renderedHeight * 1.1,
+      Math.min(80, maxCatSize),
+      maxCatSize
+    );
+    const lift = clamp(height * 0.15, 60, 90);
+
+    catPosition = {
+      left: clamp(palmX - catSize / 2, 0, width - catSize),
+      top: clamp(palmY - lift - catSize / 2, 0, height - catSize),
+    };
+  }
 
   return (
-    <div className="relative w-full" ref={containerRef}>
+    <div className="relative w-full">
       {/* Video container */}
-      <div className="relative overflow-hidden rounded-3xl" style={{ aspectRatio: '3/4', maxHeight: '65vh' }}>
+      <div
+        ref={previewRef}
+        className="relative overflow-hidden rounded-3xl"
+        style={{ aspectRatio: '3/4', maxHeight: '65vh' }}
+      >
         {/* Video element — mirrored for front camera */}
         <video
           ref={videoRef}
@@ -144,47 +163,14 @@ function HandTracking({ onStop, onFallback }) {
           )}
         </AnimatePresence>
 
-        {/* Instruction overlay */}
-        <AnimatePresence>
-          {isTracking && !handData && (
-            <motion.div
-              className="absolute top-4 left-0 right-0 flex justify-center"
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-            >
-              <div className="bg-ink/80 text-off-white rounded-2xl px-4 py-2">
-                <p className="font-handwritten text-base">{camera.instruction}</p>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Palm detected badge */}
-        <AnimatePresence>
-          {handData?.isOpen && (
-            <motion.div
-              className="absolute top-4 left-0 right-0 flex justify-center"
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0 }}
-            >
-              <div className="bg-sage/90 text-ink rounded-2xl px-4 py-2">
-                <p className="font-handwritten text-base">✨ {camera.palmDetectedText}</p>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
         {/* Birthday cat overlay */}
         <AnimatePresence>
-          {handData?.isOpen && (
+          {handData?.isOpen && catPosition && (
             <motion.div
               className="absolute pointer-events-none"
               style={{
-                left: `${catPos.x * 100}%`,
-                top: `${catPos.y * 100}%`,
-                transform: 'translate(-50%, -100%)',
+                left: catPosition.left,
+                top: catPosition.top,
                 width: catSize,
                 height: catSize,
               }}
@@ -212,6 +198,13 @@ function HandTracking({ onStop, onFallback }) {
             </motion.div>
           )}
         </AnimatePresence>
+      </div>
+
+      {/* Dynamic guidance stays visible while the camera initializes and tracks. */}
+      <div className="flex justify-center mt-3" role="status" aria-live="polite" aria-atomic="true">
+        <div className="max-w-full bg-ink/80 text-off-white rounded-2xl px-4 py-2 text-center">
+          <p className="font-handwritten text-lg">{guidanceText}</p>
+        </div>
       </div>
 
       {/* Controls */}

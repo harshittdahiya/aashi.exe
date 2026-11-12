@@ -3,6 +3,7 @@
 
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { smoothPosition } from '../utils/animationHelpers';
+import { detectOpenPalm, getPalmCenter, getPalmSize } from '../utils/handTracking';
 
 // MediaPipe model CDN path
 const MODEL_URL =
@@ -25,37 +26,60 @@ export function useHandTracking() {
   const [errorMessage, setErrorMessage] = useState('');
 
   const landmarkerRef = useRef(null);
+  const modelPromiseRef = useRef(null);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const rafRef = useRef(null);
-  const smoothedPos = useRef({ x: 0, y: 0 });
+  const smoothedPos = useRef(null);
   const lastVideoTime = useRef(-1);
+  const requestIdRef = useRef(0);
+  const activeRef = useRef(false);
 
   // ── Load model ──
-  const loadModel = useCallback(async () => {
+  const loadModel = useCallback(async (requestId) => {
     if (landmarkerRef.current) return true;
 
+    let modelPromise = modelPromiseRef.current;
     try {
-      setState(HandTrackingState.LOADING);
+      if (!modelPromise) {
+        setState(HandTrackingState.LOADING);
+        modelPromise = (async () => {
+          const { HandLandmarker, FilesetResolver } = await import('@mediapipe/tasks-vision');
+          const vision = await FilesetResolver.forVisionTasks(
+            'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm'
+          );
+          const landmarker = await HandLandmarker.createFromOptions(vision, {
+            baseOptions: {
+              modelAssetPath: MODEL_URL,
+              delegate: 'GPU',
+            },
+            runningMode: 'VIDEO',
+            numHands: 1,
+          });
 
-      const { HandLandmarker, FilesetResolver } = await import('@mediapipe/tasks-vision');
+          if (!activeRef.current) {
+            landmarker.close();
+            return false;
+          }
 
-      const vision = await FilesetResolver.forVisionTasks(
-        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm'
-      );
+          landmarkerRef.current = landmarker;
+          return true;
+        })();
+        modelPromiseRef.current = modelPromise;
+      }
 
-      landmarkerRef.current = await HandLandmarker.createFromOptions(vision, {
-        baseOptions: {
-          modelAssetPath: MODEL_URL,
-          delegate: 'GPU',
-        },
-        runningMode: 'VIDEO',
-        numHands: 1,
-      });
+      const modelReady = await modelPromise;
+      if (modelPromiseRef.current === modelPromise) modelPromiseRef.current = null;
+      if (requestId !== requestIdRef.current) return false;
+      if (!modelReady || !landmarkerRef.current) {
+        return activeRef.current ? loadModel(requestId) : false;
+      }
 
       setState(HandTrackingState.READY);
       return true;
     } catch (err) {
+      if (modelPromiseRef.current === modelPromise) modelPromiseRef.current = null;
+      if (requestId !== requestIdRef.current) return false;
       console.error('Hand Landmarker load error:', err);
       setErrorMessage('Could not load hand tracking model.');
       setState(HandTrackingState.MODEL_ERROR);
@@ -64,7 +88,7 @@ export function useHandTracking() {
   }, []);
 
   // ── Start camera ──
-  const startCamera = useCallback(async (videoElement) => {
+  const startCamera = useCallback(async (videoElement, requestId) => {
     if (!videoElement) return false;
     videoRef.current = videoElement;
 
@@ -74,18 +98,24 @@ export function useHandTracking() {
         audio: false,
       });
 
+      if (requestId !== requestIdRef.current) {
+        stream.getTracks().forEach(track => track.stop());
+        return false;
+      }
+
       streamRef.current = stream;
       videoElement.srcObject = stream;
       videoElement.setAttribute('playsinline', '');
-
-      await new Promise((resolve, reject) => {
-        videoElement.onloadedmetadata = resolve;
-        videoElement.onerror = reject;
-      });
-
       await videoElement.play();
+
+      if (requestId !== requestIdRef.current) {
+        stream.getTracks().forEach(track => track.stop());
+        return false;
+      }
+
       return true;
     } catch (err) {
+      if (requestId !== requestIdRef.current) return false;
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
         setState(HandTrackingState.PERMISSION_DENIED);
         setErrorMessage('Camera permission denied.');
@@ -96,51 +126,6 @@ export function useHandTracking() {
       return false;
     }
   }, []);
-
-  // ── Detect open palm ──
-  function detectOpenPalm(landmarks) {
-    if (!landmarks || landmarks.length < 21) return false;
-
-    // Fingertip indices: thumb=4, index=8, middle=12, ring=16, pinky=20
-    // MCP (knuckle) indices: index=5, middle=9, ring=13, pinky=17
-    const fingerTips = [8, 12, 16, 20];
-    const fingerMCPs = [5, 9, 13, 17];
-
-    // Count extended fingers
-    let extendedCount = 0;
-    for (let i = 0; i < fingerTips.length; i++) {
-      const tip = landmarks[fingerTips[i]];
-      const mcp = landmarks[fingerMCPs[i]];
-      if (tip.y < mcp.y) extendedCount++; // y decreases upward in normalized coords
-    }
-
-    // Thumb check (tip vs IP joint)
-    const thumbTip = landmarks[4];
-    const thumbIP = landmarks[3];
-    const thumbExtended = Math.abs(thumbTip.x - thumbIP.x) > 0.05;
-
-    return extendedCount >= 3; // 3+ fingers extended = open palm
-  }
-
-  // ── Calculate palm center ──
-  function getPalmCenter(landmarks) {
-    // Use wrist (0) and middle finger MCP (9) for stable center
-    const wrist = landmarks[0];
-    const middleMCP = landmarks[9];
-    return {
-      x: (wrist.x + middleMCP.x) / 2,
-      y: (wrist.y + middleMCP.y) / 2,
-    };
-  }
-
-  // ── Calculate palm size ──
-  function getPalmSize(landmarks) {
-    const wrist = landmarks[0];
-    const middleMCP = landmarks[9];
-    const dx = wrist.x - middleMCP.x;
-    const dy = wrist.y - middleMCP.y;
-    return Math.sqrt(dx * dx + dy * dy);
-  }
 
   // ── Tracking loop ──
   const startTracking = useCallback(() => {
@@ -174,12 +159,14 @@ export function useHandTracking() {
 
       if (result?.landmarks?.length > 0) {
         const landmarks = result.landmarks[0];
-        const isOpen = detectOpenPalm(landmarks);
+        const aspectRatio = video.videoWidth / video.videoHeight || 1;
+        const isOpen = detectOpenPalm(landmarks, aspectRatio);
         const rawCenter = getPalmCenter(landmarks);
-        const palmSize = getPalmSize(landmarks);
+        const palmSize = getPalmSize(landmarks, aspectRatio);
 
-        // Smooth position
-        smoothedPos.current = smoothPosition(smoothedPos.current, rawCenter, 0.2);
+        smoothedPos.current = smoothedPos.current
+          ? smoothPosition(smoothedPos.current, rawCenter, 0.2)
+          : rawCenter;
 
         setHandData({
           palmCenter: smoothedPos.current,
@@ -188,6 +175,7 @@ export function useHandTracking() {
           landmarks,
         });
       } else {
+        smoothedPos.current = null;
         setHandData(null);
       }
 
@@ -199,6 +187,9 @@ export function useHandTracking() {
 
   // ── Stop everything ──
   const stop = useCallback(() => {
+    requestIdRef.current++;
+    activeRef.current = false;
+
     if (rafRef.current) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
@@ -225,18 +216,20 @@ export function useHandTracking() {
     }
 
     lastVideoTime.current = -1;
-    smoothedPos.current = { x: 0, y: 0 };
+    smoothedPos.current = null;
     setHandData(null);
     setState(HandTrackingState.IDLE);
   }, []);
 
   // ── Initialize: load model + start camera + tracking ──
   const initialize = useCallback(async (videoElement) => {
-    const modelOk = await loadModel();
-    if (!modelOk) return;
+    const requestId = ++requestIdRef.current;
+    activeRef.current = true;
+    const modelOk = await loadModel(requestId);
+    if (!modelOk || requestId !== requestIdRef.current) return;
 
-    const cameraOk = await startCamera(videoElement);
-    if (!cameraOk) return;
+    const cameraOk = await startCamera(videoElement, requestId);
+    if (!cameraOk || requestId !== requestIdRef.current) return;
 
     startTracking();
   }, [loadModel, startCamera, startTracking]);
